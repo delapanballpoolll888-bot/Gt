@@ -1,43 +1,27 @@
+#include <jni.h>
 #include <android/log.h>
 #include <dlfcn.h>
 #include "dobby.h"
 
-#define LOG_TAG "GT_HACK"
+// 1. Hook RawAttack (Damage Asli)
+typedef float (*get_RawAttack_t)(void* __this);
+get_RawAttack_t original_get_RawAttack = nullptr;
 
-typedef void(*CalculateDamageOnly_t)(void* damageInfoPtr);
-CalculateDamageOnly_t original_CalculateDamageOnly = nullptr;
-
-typedef void(*SetDamage_t)(void* __this, float value, bool hasValue, void* methodInfo);
-SetDamage_t set_damage_func = nullptr;
-
-void hooked_CalculateDamageOnly(void* damageInfoPtr) {
-    if (!damageInfoPtr) return;
-    if (original_CalculateDamageOnly) original_CalculateDamageOnly(damageInfoPtr);
-
-    // Cari fungsi set_damage jika belum ada
-    if (!set_damage_func) {
-        void* handle = dlopen("libil2cpp.so", RTLD_NOW);
-        if (handle) {
-            void* domain = ((void*(*)())dlsym(handle, "il2cpp_domain_get"))();
-            void* assembly = ((void*(*)(void*, const char*))dlsym(handle, "il2cpp_domain_assembly_open"))(domain, "Assembly-CSharp.dll");
-            void* image = ((void*(*)(void*))dlsym(handle, "il2cpp_assembly_get_image"))(assembly);
-            void* klass = ((void*(*)(void*, const char*, const char*))dlsym(handle, "il2cpp_class_from_name"))(image, "", "DamageInfo");
-            void* method = ((void*(*)(void*, const char*, int))dlsym(handle, "il2cpp_class_get_method_from_name"))(klass, "set_damage", 1);
-            
-            if (method) {
-                // Ambil pointer fungsi dari method
-                set_damage_func = (SetDamage_t)(*(void**)((uintptr_t)method + 0x0)); 
-            }
-        }
-    }
-
-    // TIMPA DAMAGE JADI 7 JUTA
-    if (set_damage_func) {
-        set_damage_func(damageInfoPtr, 7777777.0f, true, nullptr);
-    }
+float hooked_get_RawAttack(void* __this) {
+    // Paksa Attack jadi 1.000.000
+    return 1000000.0f; 
 }
 
-void InstallHooks() {
+// 2. Hook Immortal (God Mode)
+typedef bool (*get_Immortal_t)(void* __this);
+get_Immortal_t original_get_Immortal = nullptr;
+
+bool hooked_get_Immortal(void* __this) {
+    // Paksa selalu kebal
+    return true; 
+}
+
+void InstallStatsHook() {
     void* handle = dlopen("libil2cpp.so", RTLD_NOW);
     if (!handle) return;
     
@@ -45,9 +29,21 @@ void InstallHooks() {
     dladdr(dlsym(handle, "il2cpp_init"), &info);
     uintptr_t lib_base = (uintptr_t)info.dli_fbase;
 
-    uintptr_t target_rva = 0x63654C0; // RVA dari dump.cs kamu
-    void* target_func = (void*)(lib_base + target_rva);
+    // RVA dari dump.cs kamu
+    uintptr_t rva_raw_attack = 0x8d4045c; 
+    uintptr_t rva_immortal = 0x8d44f9c;
 
-    DobbyHook(target_func, (void*)hooked_CalculateDamageOnly, (void**)&original_CalculateDamageOnly);
-    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Hook Installed!");
+    void* func_attack = (void*)(lib_base + rva_raw_attack);
+    void* func_immortal = (void*)(lib_base + rva_immortal);
+
+    // Pasang Hook
+    if (func_attack) {
+        DobbyHook(func_attack, (void*)hooked_get_RawAttack, (void**)&original_get_RawAttack);
+        __android_log_print(ANDROID_LOG_INFO, "GT_HACK", "Hook RawAttack Berhasil!");
+    }
+    
+    if (func_immortal) {
+        DobbyHook(func_immortal, (void*)hooked_get_Immortal, (void**)&original_get_Immortal);
+        __android_log_print(ANDROID_LOG_INFO, "GT_HACK", "Hook Immortal Berhasil!");
+    }
 }
